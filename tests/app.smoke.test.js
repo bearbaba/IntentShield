@@ -31,5 +31,12 @@ test('workspace renders and its navigation/agent controls update the UI', async 
   click('nav',{page:'approvals'});
   assert.match(root.innerHTML,/Pending approvals/);
   click('nav',{page:'audit'});
-  assert.match(root.innerHTML,/Evaluation history/);
+  assert.match(root.innerHTML,/Inspectable decision history/);
+  assert.match(root.innerHTML,/Security analytics/);
+  const id=JSON.parse(saved.get('intentshield:v1')).activity[0].id;
+  click('inspect',{id});
+  assert.match(root.innerHTML,/Decision inspector/);
+  assert.match(root.innerHTML,/Triggered findings/);
+  click('close-inspector');
+  assert.doesNotMatch(root.innerHTML,/id="inspector-heading"/);
 });

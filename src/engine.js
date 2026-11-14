@@ -47,7 +47,9 @@ export function validatePolicy(input) {
   if(reviewAt > perTransaction) return {ok:false,error:'Review threshold cannot exceed the single-transaction limit.'};
   if(perTransaction > dailyBudget) return {ok:false,error:'Single-transaction limit cannot exceed the daily budget.'};
   if(!Array.isArray(input.allowlistedRecipients)||!Array.isArray(input.blockedRecipients)) return {ok:false,error:'Recipient lists must be arrays.'};
-  if(input.allowlistedRecipients.some(x=>typeof x!=='string')||input.blockedRecipients.some(x=>typeof x!=='string')) return {ok:false,error:'Invalid recipient-list entry.'};
+  if(input.allowlistedRecipients.some(x=>typeof x!=='string'||x.length>120)||input.blockedRecipients.some(x=>typeof x!=='string'||x.length>120)) return {ok:false,error:'Invalid recipient-list entry.'};
+  if(['requireAllowlist','reviewCrossChain','blockInjection'].some(key=>typeof input[key]!=='boolean')) return {ok:false,error:'Security toggles must be explicit booleans.'};
+  if(!Number.isSafeInteger(input.version)||input.version<1) return {ok:false,error:'Policy version must be a positive integer.'};
   return {ok:true};
 }
 /** No claims of AI model classification: memo detection uses a documented simple regex only. */
@@ -87,7 +89,7 @@ export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
     else add('UNRECOGNIZED_RECIPIENT','REVIEW','Recipient is not on the approved list.',28);
   }
   if(sourceChain && chain && sourceChain!==chain){
-    add('CROSS_CHAIN',policy.reviewCrossChain?'REVIEW':'INFO','Cross-chain transfer requires an additional verification step.',12);
+    add('CROSS_CHAIN',policy.reviewCrossChain?'REVIEW':'INFO',policy.reviewCrossChain?'Cross-chain transfer is held for manual verification.':'Cross-chain transfer detected; manual review is disabled in this policy.',12);
   }
   if(policy.blockInjection && INJECTION.test(memo)) add('SUSPICIOUS_INSTRUCTION','BLOCK','Memo contains a known policy-bypass pattern; treat as untrusted input.',95);
   if(findings.length===0) add('ALL_CHECKS_PASSED','PASS','No configured policy rule was triggered.',0);
@@ -110,4 +112,38 @@ export const SCENARIOS = [
 ];
 export function createInitialState(){
  return {policy:{...DEFAULT_POLICY,blockedRecipients:[...DEFAULT_POLICY.blockedRecipients],allowlistedRecipients:[...DEFAULT_POLICY.allowlistedRecipients]},agents:DEFAULT_AGENTS.map(a=>({...a})),activity:[],reviews:[]};
+}
+
+/** Explainable controls are derived from rule findings, never a separate deciding model. */
+export const CONTROL_GROUPS = [
+  {id:'identity',label:'Agent authorization',rules:['DISABLED_AGENT']},
+  {id:'format',label:'Chain & recipient validity',rules:['UNSUPPORTED_CHAIN','INVALID_AMOUNT','INVALID_RECIPIENT','INVALID_CONTEXT','INVALID_POLICY']},
+  {id:'limits',label:'Financial boundaries',rules:['PER_TX_LIMIT','DAILY_LIMIT','REVIEW_THRESHOLD']},
+  {id:'recipient',label:'Recipient trust policy',rules:['DENYLIST','ALLOWLIST_REQUIRED','UNRECOGNIZED_RECIPIENT']},
+  {id:'routing',label:'Cross-chain routing',rules:['CROSS_CHAIN']},
+  {id:'instruction',label:'Untrusted memo screening',rules:['SUSPICIOUS_INSTRUCTION']}
+];
+export function explainControls(report,policy=DEFAULT_POLICY){
+ const entries=Array.isArray(report?.findings)?report.findings:[];
+ return CONTROL_GROUPS.map(group=>{
+  const matches=entries.filter(x=>group.rules.includes(x.code));
+  const severity=matches.some(x=>x.severity==='BLOCK')?'BLOCK':matches.some(x=>x.severity==='REVIEW')?'REVIEW':matches.length?'INFO':'PASS';
+  const off=(group.id==='routing' && policy.reviewCrossChain===false) || (group.id==='instruction' && policy.blockInjection===false);
+  return {...group,status:off?'MONITOR':severity,details:matches.map(x=>x.message)};
+ });
+}
+/** Local approval means a review-queue status change only, never authorization to sign. */
+export function checkReviewFreshness(entry,review,policy,agentEnabled,spentToday){
+ if(!entry||!review||review.status!=='PENDING'||entry.decision!=='REVIEW')return {ok:false,reason:'This request is not pending review.'};
+ if(!validatePolicy(policy).ok)return {ok:false,reason:'Current policy is invalid.'};
+ if(entry.policyVersion!==policy.version)return {ok:false,reason:`Policy changed from v${entry.policyVersion} to v${policy.version}. Re-evaluate this intent.`};
+ const keys=['perTransaction','dailyBudget','reviewAt','requireAllowlist','reviewCrossChain','blockInjection','allowlistedRecipients','blockedRecipients'];
+ if(!entry.policySnapshot||keys.some(key=>JSON.stringify(entry.policySnapshot[key])!==JSON.stringify(policy[key])))return {ok:false,reason:'Policy evidence is absent or changed. Re-evaluate this intent.'};
+ if(agentEnabled!==true)return {ok:false,reason:'The requesting agent is disabled. Re-evaluate after re-authorizing.'};
+ const fresh=evaluateIntent(entry,policy,{spentToday,agentEnabled});
+ if(fresh.decision!=='REVIEW')return {ok:false,reason:`Current evaluation is ${fresh.decision}. Re-evaluate this intent.`};
+ const previous=Array.isArray(entry.findings)?entry.findings.map(f=>`${f.code}:${f.severity}`).sort().join('|'):'';
+ const current=fresh.findings.map(f=>`${f.code}:${f.severity}`).sort().join('|');
+ if(previous!==current)return {ok:false,reason:'Triggered rules changed. Re-evaluate this intent.'};
+ return {ok:true,reason:'Current policy and agent authorization still match this local review.'};
 }

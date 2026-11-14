@@ -14,7 +14,7 @@ createServer(async(req,res)=>{
     const details=await stat(target);
     if(!details.isFile()) throw new Error('Not a file');
     const contents=await readFile(target);
-    res.writeHead(200,{'Content-Type':types[extname(target)],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer'});
+    res.writeHead(200,{'Content-Type':types[extname(target)],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer'});
     res.end(contents);
   } catch {res.writeHead(404);res.end('Not found');}
 }).listen(port,'127.0.0.1',()=>console.log(`IntentShield → http://127.0.0.1:${port}`));
