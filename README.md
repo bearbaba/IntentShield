@@ -3,6 +3,7 @@
 **A local-first financial firewall for autonomous AI agents.**
 
 **NEAR Hackathon 2026 · AI Security & Defense**  
+**Live demo:** https://intentshield.vercel.app (browser-local simulation, no wallet or funds)  
 **Status:** Working, dependency-free **simulation prototype**, not a mainnet integration or production wallet firewall.  
 **Operating cost:** $0 for running this demo locally. No paid APIs, AI subscriptions, wallet connection, transactions, or hosted services are needed.
 
