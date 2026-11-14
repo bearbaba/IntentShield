@@ -53,3 +53,29 @@ test('already resolved review cannot be approved a second time',()=>{const [entr
 test('explainable controls derive block and review from engine findings',()=>{const block=explainControls(check('injection'));assert.equal(block.find(x=>x.id==='instruction').status,'BLOCK');const review=explainControls(check('review'));assert.equal(review.find(x=>x.id==='limits').status,'REVIEW');});
 test('tampered policy booleans or versions are invalid and fail closed',()=>{const bad={...base.policy,blockInjection:'false'};assert.equal(validatePolicy(bad).ok,false);assert.equal(evaluateIntent(SCENARIOS[0],bad,{spentToday:0,agentEnabled:true}).decision,'BLOCK');assert.equal(validatePolicy({...base.policy,version:0}).ok,false)});
 test('blocklist has precedence over allowlist when address appears in both',()=>{const policy={...base.policy,blockedRecipients:['treasury.near'],allowlistedRecipients:['treasury.near']};assert.equal(evaluateIntent(SCENARIOS[0],policy,{spentToday:0,agentEnabled:true}).decision,'BLOCK')});
+
+// Security regressions: micro-USDC budgets, NEAR account formats and stale reviews.
+test('micro-USDC amounts cannot slip past the daily budget through cent rounding',()=>{
+ const nearLimit=check('safe',{amount:0.000002},{spentToday:749.999999});
+ assert.equal(nearLimit.decision,'BLOCK');
+ assert.ok(nearLimit.findings.some(f=>f.code==='DAILY_LIMIT'));
+ const exactlyAt=check('safe',{amount:0.000001},{spentToday:749.999999});
+ assert.equal(exactlyAt.decision,'ALLOW');
+});
+test('NEAR account validation accepts implicit hex and nested named accounts',()=>{
+ assert.equal(validAddress('NEAR','a'.repeat(64)),true);
+ assert.equal(validAddress('NEAR','app.team.near'),true);
+ assert.equal(validAddress('NEAR','team.example'),true);
+ assert.equal(validAddress('NEAR','invalid..near'),false);
+ assert.equal(validAddress('NEAR','A'.repeat(64)),false);
+});
+test('review becomes stale if daily spend context changes even without a different verdict',()=>{
+ const [entry,review]=pendingReview();
+ const gate=checkReviewFreshness(entry,review,base.policy,true,181);
+ assert.equal(gate.ok,false);
+ assert.match(gate.reason,/daily spending context changed/i);
+});
+test('excessively large financial context is rejected rather than losing precision',()=>{
+ assert.equal(validatePolicy({...base.policy,dailyBudget:1_000_000_001}).ok,false);
+ assert.equal(check('safe',{}, {spentToday:1_000_000_001}).decision,'BLOCK');
+});

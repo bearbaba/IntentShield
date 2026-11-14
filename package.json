@@ -1,0 +1,17 @@
+{
+  "name": "intentshield",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-free local policy simulator for AI-agent payment intents",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "node --test",
+    "check": "node --check src/engine.js && node --check src/app.js && npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

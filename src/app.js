@@ -51,7 +51,7 @@ function load(){
     if(Array.isArray(parsed.agents))base.agents=base.agents.map(a=>({...a,enabled:parsed.agents.find(b=>b.id===a.id)?.enabled!==false}));
     if(Array.isArray(parsed.activity))base.activity=parsed.activity.filter(x=>x&&typeof x==='object').slice(0,300);
     if(Array.isArray(parsed.reviews))base.reviews=parsed.reviews.filter(x=>x&&typeof x==='object').slice(0,300);
-    if(Number.isFinite(parsed.simulatedSpentToday)&&parsed.simulatedSpentToday>=0)base.simulatedSpentToday=parsed.simulatedSpentToday;
+    if(Number.isFinite(parsed.simulatedSpentToday)&&parsed.simulatedSpentToday>=0&&parsed.simulatedSpentToday<=1_000_000_000&&Math.round(parsed.simulatedSpentToday*1e6)/1e6===parsed.simulatedSpentToday)base.simulatedSpentToday=parsed.simulatedSpentToday;
     return base;
   }
   for(const sc of SCENARIOS){
@@ -235,7 +235,7 @@ function savePolicy(form){
  const candidate={...state.policy,perTransaction:Number(data.get('perTransaction')),dailyBudget:Number(data.get('dailyBudget')),reviewAt:Number(data.get('reviewAt')),requireAllowlist:data.has('requireAllowlist'),reviewCrossChain:data.has('reviewCrossChain'),blockInjection:data.has('blockInjection'),allowlistedRecipients:String(data.get('allowlistedRecipients')).split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,100),blockedRecipients:String(data.get('blockedRecipients')).split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,100),version:state.policy.version+1};
  const spent=Number(data.get('simulatedSpentToday'));
  const check=validatePolicy(candidate);
- if(!check.ok||!Number.isFinite(spent)||spent<0||Math.round(spent*1e6)/1e6!==spent){$('#policy-error').textContent=check.ok?'Simulated daily spend must be a nonnegative amount with at most six decimals.':check.error;return;}
+ if(!check.ok||!Number.isFinite(spent)||spent<0||spent>1_000_000_000||Math.round(spent*1e6)/1e6!==spent){$('#policy-error').textContent=check.ok?'Simulated daily spend must be between 0 and 1 billion USDC, with at most six decimals.':check.error;return;}
  state.policy=candidate;state.simulatedSpentToday=spent;lastResult=null;save();notice=`Policy v${candidate.version} saved locally.`;render();
 }
 function downloadJSON(data,filename){

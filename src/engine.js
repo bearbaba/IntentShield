@@ -25,13 +25,14 @@ export const DEFAULT_POLICY = {
   allowlistedRecipients:ALLOWED_RECIPIENTS.map(x=>x.address),
   version:1
 };
-const NEAR_ACCOUNT = /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*\.(?:near|testnet)$/;
+const NEAR_ACCOUNT = /^(?=.{2,64}$)[a-z0-9]+(?:[-_][a-z0-9]+)*(?:\.[a-z0-9]+(?:[-_][a-z0-9]+)*)*$/;
 const EVM = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const INJECTION = /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|bypass\s+(?:the\s+)?(?:policy|security|approval)|without\s+(?:human\s+)?approval|override\s+(?:all\s+)?(?:safety|policy)|disable\s+(?:the\s+)?(?:safeguards|security))/i;
-const round = n => Math.round((n + Number.EPSILON)*100)/100;
+const toMicros = n => Math.round(n * 1_000_000);
 const recipientKey = (x,chain) => { const value=String(x ?? '').trim(); return chain==='Solana'?value:value.toLowerCase(); };
-function positiveMoney(n) {return typeof n === 'number' && Number.isFinite(n) && n > 0 && Math.round(n*1e6)/1e6 === n;}
+function validSpend(n) {return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1_000_000_000 && toMicros(n)/1_000_000 === n;}
+function positiveMoney(n) {return validSpend(n) && n > 0;}
 export function validAddress(chain, address) {
   if(typeof address !== 'string') return false;
   const value=address.trim();
@@ -71,17 +72,17 @@ export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
   const sourceChain=intent?.sourceChain;
   const memo=String(intent?.memo??'').slice(0,2000);
   if(!intent||!CHAINS.includes(sourceChain)||!CHAINS.includes(chain)) add('UNSUPPORTED_CHAIN','BLOCK','Select valid source and destination chains.',100);
-  if(!Number.isFinite(amount)||amount<=0||amount>1000000000||Math.round(amount*1e6)/1e6!==amount) add('INVALID_AMOUNT','BLOCK','Enter a positive USDC amount (maximum six decimal places).',100);
+  if(!positiveMoney(amount)) add('INVALID_AMOUNT','BLOCK','Enter a positive USDC amount (maximum six decimal places).',100);
   if(!validAddress(chain,destination)) add('INVALID_RECIPIENT','BLOCK','Recipient address format is invalid for the selected chain.',100);
   if(context?.agentEnabled!==true) add('DISABLED_AGENT','BLOCK','Agent is disabled or authorization was not provided.',100);
   const deny=(Array.isArray(policy.blockedRecipients)?policy.blockedRecipients:[]).map(x=>recipientKey(x,chain));
   const allow=(Array.isArray(policy.allowlistedRecipients)?policy.allowlistedRecipients:[]).map(x=>recipientKey(x,chain));
   if(destination && deny.includes(recipientKey(destination,chain))) add('DENYLIST','BLOCK','Recipient appears on your local denylist.',100);
-  if(Number.isFinite(amount)&&amount>0){
+  if(positiveMoney(amount)){
     if(amount>policy.perTransaction) add('PER_TX_LIMIT','BLOCK',`Exceeds the ${policy.perTransaction} USDC per-transaction limit.`,85);
     const spent=context?.spentToday;
-    if(typeof spent!=='number'||!Number.isFinite(spent)||spent<0){ add('INVALID_CONTEXT','BLOCK','Invalid daily-spend context.',100); }
-    else if(round(spent+amount)>policy.dailyBudget) add('DAILY_LIMIT','BLOCK',`Would exceed the ${policy.dailyBudget} USDC daily budget (already used: ${round(spent)}).`,85);
+    if(!validSpend(spent)){ add('INVALID_CONTEXT','BLOCK','Invalid daily-spend context.',100); }
+    else if(toMicros(spent) + toMicros(amount) > toMicros(policy.dailyBudget)) add('DAILY_LIMIT','BLOCK',`Would exceed the ${policy.dailyBudget} USDC daily budget (already used: ${spent}).`,85);
     if(amount>=policy.reviewAt) add('REVIEW_THRESHOLD','REVIEW',`Meets the ${policy.reviewAt} USDC manual-review threshold.`,18);
   }
   if(destination && validAddress(chain,destination) && !allow.includes(recipientKey(destination,chain))){
@@ -140,6 +141,7 @@ export function checkReviewFreshness(entry,review,policy,agentEnabled,spentToday
  const keys=['perTransaction','dailyBudget','reviewAt','requireAllowlist','reviewCrossChain','blockInjection','allowlistedRecipients','blockedRecipients'];
  if(!entry.policySnapshot||keys.some(key=>JSON.stringify(entry.policySnapshot[key])!==JSON.stringify(policy[key])))return {ok:false,reason:'Policy evidence is absent or changed. Re-evaluate this intent.'};
  if(agentEnabled!==true)return {ok:false,reason:'The requesting agent is disabled. Re-evaluate after re-authorizing.'};
+ if(!validSpend(entry.context?.spentToday)||!validSpend(spentToday)||toMicros(entry.context.spentToday)!==toMicros(spentToday))return {ok:false,reason:'Simulated daily spending context changed. Re-evaluate this intent.'};
  const fresh=evaluateIntent(entry,policy,{spentToday,agentEnabled});
  if(fresh.decision!=='REVIEW')return {ok:false,reason:`Current evaluation is ${fresh.decision}. Re-evaluate this intent.`};
  const previous=Array.isArray(entry.findings)?entry.findings.map(f=>`${f.code}:${f.severity}`).sort().join('|'):'';
