@@ -30,7 +30,7 @@ const EVM = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const INJECTION = /(?:ignore\s+(?:all\s+)?(?:previous\s+)?instructions|bypass\s+(?:the\s+)?(?:policy|security|approval)|without\s+(?:human\s+)?approval|override\s+(?:all\s+)?(?:safety|policy)|disable\s+(?:the\s+)?(?:safeguards|security))/i;
 const round = n => Math.round((n + Number.EPSILON)*100)/100;
-const recipientKey = x => String(x ?? '').trim().toLowerCase();
+const recipientKey = (x,chain) => { const value=String(x ?? '').trim(); return chain==='Solana'?value:value.toLowerCase(); };
 function positiveMoney(n) {return typeof n === 'number' && Number.isFinite(n) && n > 0 && Math.round(n*1e6)/1e6 === n;}
 export function validAddress(chain, address) {
   if(typeof address !== 'string') return false;
@@ -72,9 +72,9 @@ export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
   if(!Number.isFinite(amount)||amount<=0||amount>1000000000||Math.round(amount*1e6)/1e6!==amount) add('INVALID_AMOUNT','BLOCK','Enter a positive USDC amount (maximum six decimal places).',100);
   if(!validAddress(chain,destination)) add('INVALID_RECIPIENT','BLOCK','Recipient address format is invalid for the selected chain.',100);
   if(context?.agentEnabled!==true) add('DISABLED_AGENT','BLOCK','Agent is disabled or authorization was not provided.',100);
-  const deny=(policy.blockedRecipients||[]).map(recipientKey);
-  const allow=(policy.allowlistedRecipients||[]).map(recipientKey);
-  if(destination && deny.includes(recipientKey(destination))) add('DENYLIST','BLOCK','Recipient appears on your local denylist.',100);
+  const deny=(Array.isArray(policy.blockedRecipients)?policy.blockedRecipients:[]).map(x=>recipientKey(x,chain));
+  const allow=(Array.isArray(policy.allowlistedRecipients)?policy.allowlistedRecipients:[]).map(x=>recipientKey(x,chain));
+  if(destination && deny.includes(recipientKey(destination,chain))) add('DENYLIST','BLOCK','Recipient appears on your local denylist.',100);
   if(Number.isFinite(amount)&&amount>0){
     if(amount>policy.perTransaction) add('PER_TX_LIMIT','BLOCK',`Exceeds the ${policy.perTransaction} USDC per-transaction limit.`,85);
     const spent=context?.spentToday;
@@ -82,7 +82,7 @@ export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
     else if(round(spent+amount)>policy.dailyBudget) add('DAILY_LIMIT','BLOCK',`Would exceed the ${policy.dailyBudget} USDC daily budget (already used: ${round(spent)}).`,85);
     if(amount>=policy.reviewAt) add('REVIEW_THRESHOLD','REVIEW',`Meets the ${policy.reviewAt} USDC manual-review threshold.`,18);
   }
-  if(destination && validAddress(chain,destination) && !allow.includes(recipientKey(destination))){
+  if(destination && validAddress(chain,destination) && !allow.includes(recipientKey(destination,chain))){
     if(policy.requireAllowlist) add('ALLOWLIST_REQUIRED','BLOCK','Recipient is not on the required allowlist.',85);
     else add('UNRECOGNIZED_RECIPIENT','REVIEW','Recipient is not on the approved list.',28);
   }

@@ -11,7 +11,7 @@ test('human review threshold triggers review, not auto execution',()=>assert.equ
 test('per-tx overspend blocked',()=>assert.equal(check('limit').decision,'BLOCK'));
 test('prompt injection pattern blocked',()=>assert.ok(check('injection').findings.some(f=>f.code==='SUSPICIOUS_INSTRUCTION')));
 test('unrecognized address requires review',()=>assert.equal(check('unknown').decision,'REVIEW'));
-test('denylist overrides allowlist',()=>assert.equal(check('safe',{}, {spentToday:180,agentEnabled:true}).decision,'ALLOW'));
+test('approved low-value transfer allowed under normal context',()=>assert.equal(check('safe',{}, {spentToday:180,agentEnabled:true}).decision,'ALLOW'));
 test('disabled agent fails closed',()=>assert.equal(check('safe',{}, {agentEnabled:false}).decision,'BLOCK'));
 test('daily budget enforced',()=>assert.equal(check('review',{}, {spentToday:700}).decision,'BLOCK'));
 test('invalid address is blocked',()=>assert.equal(check('safe',{recipient:'garbage'}).decision,'BLOCK'));
@@ -36,3 +36,5 @@ test('denylist is blocking even below threshold',()=>{
 test('missing agent authorization is blocked',()=>assert.equal(evaluateIntent(SCENARIOS[0],base.policy,{spentToday:0}).decision,'BLOCK'));
 test('invalid spend context fails closed',()=>assert.equal(check('safe',{}, {spentToday:NaN}).decision,'BLOCK'));
 test('null policy fails closed without throwing',()=>assert.equal(evaluateIntent(SCENARIOS[0],null,{spentToday:0,agentEnabled:true}).decision,'BLOCK'));
+test('malformed policy lists fail closed without throwing',()=>assert.equal(evaluateIntent(SCENARIOS[0],{...base.policy,blockedRecipients:'bad'}, {spentToday:0,agentEnabled:true}).decision,'BLOCK'));
+test('Solana address comparisons preserve case',()=>{const addr='11111111111111111111111111111112'; const policy={...base.policy,allowlistedRecipients:[addr],blockedRecipients:[addr.toLowerCase().replace('2','3')],requireAllowlist:true};assert.equal(evaluateIntent({...SCENARIOS[0],sourceChain:'Solana',destinationChain:'Solana',recipient:addr},policy,{spentToday:0,agentEnabled:true}).decision,'ALLOW');});
