@@ -78,3 +78,16 @@ button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:1150px){.audit-analytics{grid-template-columns:1fr}.control-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.audit-analytics{gap:12px}.inspector-head{padding:20px 18px}.inspector-body{padding:15px 18px}.inspector-footer{padding:14px 18px}.inspector-facts{grid-template-columns:1fr 1fr}.audit-search>span{width:100%;margin:0}.control-grid{grid-template-columns:1fr 1fr}.audit-analytics .panel{min-height:0}}
 @media(max-width:390px){.control-grid,.inspector-facts{grid-template-columns:1fr}.inspector-footer{flex-wrap:wrap}.inspector-footer .btn{flex:1}}
+
+/* Safe review recovery: visible repair action without bypassing policy checks. */
+.approval-intro-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end}
+.approval-intro-actions .btn{white-space:normal;text-align:center}
+.btn.recheck{background:#2b2948;border:1px solid #655a9a;color:#dfd5ff}
+.btn.recheck:hover{background:#39305c}
+.btn:disabled{opacity:.42;cursor:not-allowed;filter:none!important;transform:none!important}
+.stale-warning{display:flex;gap:10px;align-items:flex-start;line-height:1.6}
+.stale-warning strong{color:#ffd794}
+.fresh-review-tag{display:flex;align-items:center;gap:8px;font-size:10px;color:#7be2bb;background:#15362f;border:1px solid #2c5b4c;padding:9px 12px;border-radius:7px;margin-bottom:12px}
+.status.superseded{background:#34364b;color:#c0c4df}
+@media(max-width:920px){.approval-intro{flex-wrap:wrap}.approval-intro-actions{width:100%;justify-content:flex-start}}
+@media(max-width:600px){.approval-actions{align-items:flex-start}.approval-actions>div{flex-wrap:wrap}.approval-actions>div .btn{flex:1}.approval-intro-actions{display:grid;grid-template-columns:1fr 1fr}.approval-intro-actions .btn{min-width:0}}

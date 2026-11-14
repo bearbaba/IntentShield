@@ -43,6 +43,8 @@ function load(){
   let parsed;
   try{parsed=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');}catch{parsed=null;}
   const base=createInitialState();
+  // Legacy browser states may not contain this field; never evaluate with an undefined spend baseline.
+  base.simulatedSpentToday=180;
   if(parsed && typeof parsed==='object'){
     const policy={...base.policy,...parsed.policy};
     if(validatePolicy(policy).ok){base.policy=policy;}
@@ -52,7 +54,6 @@ function load(){
     if(Number.isFinite(parsed.simulatedSpentToday)&&parsed.simulatedSpentToday>=0)base.simulatedSpentToday=parsed.simulatedSpentToday;
     return base;
   }
-  base.simulatedSpentToday=180;
   for(const sc of SCENARIOS){
     const report=evaluateIntent(sc,base.policy,{spentToday:base.simulatedSpentToday,agentEnabled:true});
     const entry={id:uid(),at:new Date(Date.now()-(SCENARIOS.length-base.activity.length)*22*60*1000).toISOString(),scenario:sc.id,agentId:sc.agentId,sourceChain:sc.sourceChain,destinationChain:sc.destinationChain,recipient:sc.recipient,amount:Number(sc.amount),memo:sc.memo,origin:'sample',policySnapshot:policySnapshot(base.policy),...report};
@@ -89,7 +90,7 @@ function shell(){
     <div class="sidebar-bottom"><div class="side-foot-card"><div class="side-foot-icon">${icon('lock',18)}</div><strong>Zero-cost sandbox</strong><p>Safe local evaluation. No wallet connections or live funds.</p><span class="foot-spark">${icon('check',13)} Execution disabled by design</span></div><div class="sidebar-profile"><span class="avatar">IS</span><div><strong>Demo operator</strong><small>Local administrator</small></div>${icon('settings',17)}</div></div>
   </aside><div class="main-wrap">
   <header class="topbar"><div class="crumb">Workspace <span>/</span> <strong>${esc(title)}</strong></div><div class="header-right"><span class="pulse"><i></i> LOCAL MODE</span><span class="topbar-divider"></span><a class="github-link" href="https://github.com/bearbaba/IntentShield" rel="noopener noreferrer" target="_blank" aria-label="Open GitHub project">GitHub ${icon('external',13)}</a><button class="mobile-menu icon-button" data-action="menu" aria-label="Toggle navigation">${icon('menu',20)}</button></div></header>
-  <main class="main"><div class="page-head"><div><div class="overline"><span class="overline-line"></span> INTENT SECURITY PLATFORM <span class="small-dot">•</span> DEMO V1</div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div>${page==='overview'?`<button class="btn primary" data-action="nav" data-page="simulator">${icon('bolt',17)} Evaluate an intent ${icon('arrow',16)}</button>`:''}</div>
+  <main class="main"><div class="page-head"><div><div class="overline"><span class="overline-line"></span> INTENT SECURITY PLATFORM <span class="small-dot">•</span> DEMO V2</div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div>${page==='overview'?`<button class="btn primary" data-action="nav" data-page="simulator">${icon('bolt',17)} Evaluate an intent ${icon('arrow',16)}</button>`:''}</div>
   <div class="safe-banner">${icon('info',16)} <span><strong>Simulation only.</strong> No wallet is connected. No signatures, deposits, transfers or swaps occur. Preloaded sample events are clearly marked.</span></div>
   ${page==='overview'?overview():page==='simulator'?simulator():page==='approvals'?approvals():page==='policies'?policies():page==='agents'?agents():audit()}
   <footer class="footer"><span>© IntentShield · Policy-first agent security</span><span>Built for NEAR Hackathon 2026 <span class="footer-separator">·</span> AI Security &amp; Defense</span></footer>
@@ -130,13 +131,15 @@ function resultCard(e){
 function approvals(){
  const pending=state.reviews.filter(x=>x.status==='PENDING');
  const resolved=state.reviews.filter(x=>x.status!=='PENDING');
- return `<div class="approval-intro card"><span class="approval-big">${icon('clock',24)}</span><div><h3>${pending.length} request${pending.length===1?'':'s'} waiting for review</h3><p>Approving here updates a local queue only. Production use requires a separate signing-boundary authorization service.</p></div><button class="btn secondary" data-action="nav" data-page="simulator">Create evaluation ${icon('arrow',15)}</button></div>
- <section class="card panel"><div class="panel-head"><div><h3>Pending approvals</h3><p>Manual review of ambiguous policy outcomes</p></div><span class="counter-tag">${pending.length} OPEN</span></div>${pending.length?`<div class="approval-list">${pending.map(r=>approvalItem(r)).join('')}</div>`:`<div class="empty big-empty">${icon('check',34)}<h3>All clear</h3><p>There are no pending approval requests.</p></div>`}</section>
- ${resolved.length?`<section class="card panel section-gap"><div class="panel-head"><div><h3>Resolved requests</h3><p>Local decisions; no real transfers</p></div></div><div class="resolved-list">${resolved.map(r=>{const e=state.activity.find(a=>a.id===r.entryId);return `<div class="resolved-row"><span>${icon('file',16)}</span><strong>${esc(e?.agentId||'Agent')} · ${num(e?.amount)} USDC</strong><small>${esc(date(r.resolvedAt||r.at))}</small>${decisionPill(r.status)}</div>`}).join('')}</div></section>`:''}`;
+ const staleCount=pending.filter(r=>{const e=state.activity.find(x=>x.id===r.entryId);return !checkReviewFreshness(e,r,state.policy,state.agents.find(a=>a.id===e?.agentId)?.enabled===true,state.simulatedSpentToday).ok;}).length;
+ return `<div class="approval-intro card"><span class="approval-big">${icon('clock',24)}</span><div><h3>${pending.length} request${pending.length===1?'':'s'} waiting for review</h3><p>${staleCount?`${staleCount} request${staleCount===1?' has':'s have'} outdated evidence. Re-evaluate in place to produce a new policy decision. `:''}Approvals update local records only; no wallet signing or payment is possible.</p></div><div class="approval-intro-actions"><button class="btn secondary" data-action="nav" data-page="simulator">Custom evaluation ${icon('arrow',15)}</button><button class="btn primary" data-action="demo-review">${icon('bolt',14)} Generate review demo</button></div></div>
+ <section class="card panel"><div class="panel-head"><div><h3>Pending approvals</h3><p>Manual review of ambiguous policy outcomes; no auto-approval</p></div><span class="counter-tag">${pending.length} OPEN</span></div>${pending.length?`<div class="approval-list">${pending.map(r=>approvalItem(r)).join('')}</div>`:`<div class="empty big-empty">${icon('check',34)}<h3>All clear</h3><p>There are no pending approval requests.</p></div>`}</section>
+ ${resolved.length?`<section class="card panel section-gap"><div class="panel-head"><div><h3>Resolved and superseded requests</h3><p>Local decisions and immutable-by-UI history; no actual transfers</p></div></div><div class="resolved-list">${resolved.map(r=>{const e=state.activity.find(a=>a.id===r.entryId);return `<div class="resolved-row"><span>${icon('file',16)}</span><strong>${esc(e?.agentId||'Agent')} · ${num(e?.amount)} USDC</strong><small>${esc(date(r.resolvedAt||r.at))}</small>${decisionPill(r.status)}</div>`}).join('')}</div></section>`:''}`;
 }
 function approvalItem(r){
  const e=state.activity.find(a=>a.id===r.entryId);if(!e)return '';
- return `<article class="approval-item"><div class="approval-first"><div><span class="request-id">REQUEST ${esc(r.id.slice(0,8).toUpperCase())} <span>· ${esc(e.origin==='sample'?'SAMPLE':'LOCAL')}</span></span><h3>${num(e.amount)} <small>USDC</small></h3><p>${esc(state.agents.find(a=>a.id===e.agentId)?.name||e.agentId)} · ${esc(e.sourceChain)} → ${esc(e.destinationChain)}</p></div><div class="approval-status">${decisionPill('REVIEW')}<span>Risk score ${e.score}/100</span></div></div><div class="approval-recipient">${icon('globe',15)} <strong>Recipient</strong> <code>${esc(short(e.recipient))}</code></div>${!checkReviewFreshness(e,r,state.policy,state.agents.find(a=>a.id===e.agentId)?.enabled===true,state.simulatedSpentToday).ok?`<div class="stale-warning">${icon('alert',15)} ${esc(checkReviewFreshness(e,r,state.policy,state.agents.find(a=>a.id===e.agentId)?.enabled===true,state.simulatedSpentToday).reason)} Approval is unavailable until re-evaluation.</div>`:''}<div class="approval-reasons">${e.findings.filter(f=>f.severity==='REVIEW').map(f=>`<span>${icon('alert',13)} ${esc(f.message)}</span>`).join('')}</div><div class="approval-actions"><p>${icon('lock',14)} Approval is a local record, never a signature.</p><div><button class="btn reject" data-action="resolve" data-id="${esc(r.id)}" data-status="REJECTED">${icon('x',14)} Reject</button><button class="btn approve" data-action="resolve" data-id="${esc(r.id)}" data-status="APPROVED" ${!checkReviewFreshness(e,r,state.policy,state.agents.find(a=>a.id===e.agentId)?.enabled===true,state.simulatedSpentToday).ok?'disabled title="Stale review must be re-evaluated"':''}>${icon('check',14)} Approve locally</button></div></div></article>`;
+ const gate=checkReviewFreshness(e,r,state.policy,state.agents.find(a=>a.id===e.agentId)?.enabled===true,state.simulatedSpentToday);
+ return `<article class="approval-item" data-review-id="${esc(r.id)}"><div class="approval-first"><div><span class="request-id">REQUEST ${esc(r.id.slice(0,8).toUpperCase())} <span>· ${esc(e.origin==='sample'?'SAMPLE':'LOCAL')}</span></span><h3>${num(e.amount)} <small>USDC</small></h3><p>${esc(state.agents.find(a=>a.id===e.agentId)?.name||e.agentId)} · ${esc(e.sourceChain)} → ${esc(e.destinationChain)}</p></div><div class="approval-status">${decisionPill('REVIEW')}<span>Risk score ${safeScore(e.score)}/100</span></div></div><div class="approval-recipient">${icon('globe',15)} <strong>Recipient</strong> <code>${esc(short(e.recipient))}</code></div>${!gate.ok?`<div class="stale-warning">${icon('alert',15)} <div><strong>Re-evaluation required.</strong> ${esc(gate.reason)} This request cannot be approved directly. A new decision will be created under the current policy.</div></div>`:`<div class="fresh-review-tag">${icon('check',14)} Fresh policy evidence · eligible for local review (not a signature)</div>`}<div class="approval-reasons">${(Array.isArray(e.findings)?e.findings:[]).filter(f=>f.severity==='REVIEW').map(f=>`<span>${icon('alert',13)} ${esc(f.message)}</span>`).join('')}</div><div class="approval-actions"><p>${icon('lock',14)} Local review only. No funds are moved.</p><div>${!gate.ok?`<button class="btn recheck" data-action="reevaluate" data-id="${esc(r.id)}" aria-label="Re-evaluate stale request ${esc(r.id.slice(0,8))}">${icon('refresh',15)} Re-evaluate</button>`:''}<button class="btn reject" data-action="resolve" data-id="${esc(r.id)}" data-status="REJECTED">${icon('x',14)} Reject</button><button class="btn approve" data-action="resolve" data-id="${esc(r.id)}" data-status="APPROVED" ${!gate.ok?'disabled title="Re-evaluate first; this request has stale policy evidence"':''}>${icon('check',14)} Approve locally</button></div></div></article>`;
 }
 function policies(){
  const p=state.policy;
@@ -191,18 +194,40 @@ function auditInspector(){
  <div class="inspector-footer"><button class="btn secondary" data-action="copy-inspector" data-id="${esc(e.id)}">${icon('copy',15)} Copy this record</button><button class="btn primary" data-action="close-inspector">Close inspector</button></div></section></div>`;
 }
 
-function persistIntent(form){
- const data=new FormData(form);
- formIntent={agentId:String(data.get('agentId')),sourceChain:String(data.get('sourceChain')),destinationChain:String(data.get('destinationChain')),amount:String(data.get('amount')),recipient:String(data.get('recipient')),memo:String(data.get('memo'))};
- const agent=state.agents.find(a=>a.id===formIntent.agentId);
- const report=evaluateIntent(formIntent,state.policy,{agentEnabled:agent?.enabled===true,spentToday:state.simulatedSpentToday});
- const sample=SCENARIOS.find(x=>x.id===selectedScenario);
- const isExactSample=sample && ['agentId','sourceChain','destinationChain','amount','recipient','memo'].every(k=>String(sample[k])===String(formIntent[k]));
- const entry={id:uid(),at:report.evaluatedAt,origin:'user',policySnapshot:policySnapshot(state.policy),scenario:isExactSample?selectedScenario:'custom',agentId:formIntent.agentId,sourceChain:formIntent.sourceChain,destinationChain:formIntent.destinationChain,amount:Number(formIntent.amount),recipient:formIntent.recipient,memo:formIntent.memo,...report};
+/** Store a new simulated evaluation; never mutate an old verdict or authorize a payment. */
+function recordEvaluation(input,scenario='custom',reevaluatedFrom=null){
+ const agent=state.agents.find(a=>a.id===input.agentId);
+ const report=evaluateIntent(input,state.policy,{agentEnabled:agent?.enabled===true,spentToday:state.simulatedSpentToday});
+ const entry={id:uid(),at:report.evaluatedAt,origin:'user',policySnapshot:policySnapshot(state.policy),scenario,agentId:input.agentId,sourceChain:input.sourceChain,destinationChain:input.destinationChain,amount:Number(input.amount),recipient:input.recipient,memo:input.memo,...(reevaluatedFrom?{reevaluatedFrom}:{}),...report};
  state.activity.unshift(entry);state.activity=state.activity.slice(0,300);
  if(entry.decision==='REVIEW')state.reviews.unshift({id:uid(),entryId:entry.id,at:entry.at,status:'PENDING'});
  state.reviews=state.reviews.slice(0,300);
- lastResult=entry;save();notice=`${entry.decision}: Policy evaluation completed without moving funds.`;
+ save();return entry;
+}
+function persistIntent(form){
+ const data=new FormData(form);
+ formIntent={agentId:String(data.get('agentId')),sourceChain:String(data.get('sourceChain')),destinationChain:String(data.get('destinationChain')),amount:String(data.get('amount')),recipient:String(data.get('recipient')),memo:String(data.get('memo'))};
+ const sample=SCENARIOS.find(x=>x.id===selectedScenario);
+ const isExactSample=sample && ['agentId','sourceChain','destinationChain','amount','recipient','memo'].every(k=>String(sample[k])===String(formIntent[k]));
+ const entry=recordEvaluation(formIntent,isExactSample?selectedScenario:'custom');
+ lastResult=entry;notice=entry.decision==='REVIEW'?'REVIEW created and saved to Approval queue. Open Approval queue to inspect or approve locally.':`${entry.decision}: Policy evaluation completed without moving funds.`;
+ render();
+}
+function reEvaluateReview(reviewId){
+ const review=state.reviews.find(r=>r.id===reviewId&&r.status==='PENDING');
+ if(!review)return;
+ const original=state.activity.find(e=>e.id===review.entryId);
+ if(!original||original.decision!=='REVIEW'){notice='Original review record is missing or invalid. No approval was granted.';render();return;}
+ const input={agentId:original.agentId,sourceChain:original.sourceChain,destinationChain:original.destinationChain,amount:original.amount,recipient:original.recipient,memo:original.memo};
+ const next=recordEvaluation(input,original.scenario||'custom',original.id);
+ review.status='SUPERSEDED';review.resolvedAt=next.at;review.supersededBy=next.id;
+ review.note=`Re-evaluated under policy v${next.policyVersion}; previous request cannot be approved.`;
+ lastResult=next;save();
+ if(next.decision==='REVIEW'){
+   notice='New REVIEW created with current evidence; the previous request was superseded. No automatic approval.';
+ }else{
+   notice=`Re-evaluation returned ${next.decision}. Previous REVIEW superseded; no approval or transfer occurred.`;
+ }
  render();
 }
 function savePolicy(form){
@@ -233,6 +258,13 @@ function action(btn){
  if(action==='close-inspector'){selectedAuditId=null;render();}
  if(action==='copy-inspector'){const entry=state.activity.find(e=>e.id===btn.dataset.id);if(entry)navigator.clipboard?.writeText(JSON.stringify(entry,null,2)).then(()=>{notice='Decision evidence copied.';render();}).catch(()=>{notice='Clipboard unavailable; use JSON export.';render();});}
  if(action==='toggle-agent'){const agent=state.agents.find(a=>a.id===btn.dataset.id);if(!agent)return;agent.enabled=!agent.enabled;save();notice=`${agent.name} ${agent.enabled?'enabled':'disabled'}.`;render();}
+ if(action==='demo-review'){
+  const example=SCENARIOS.find(x=>x.id==='review');
+  const entry=recordEvaluation(example,'review');lastResult=entry;
+  notice=entry.decision==='REVIEW'?'New LOCAL review generated under the current policy. You can inspect it below.':`Example evaluated as ${entry.decision} under your current policy. No review was fabricated; inspect the audit trail.`;
+  render();
+ }
+ if(action==='reevaluate'){reEvaluateReview(btn.dataset.id);}
  if(action==='resolve'){
   const review=state.reviews.find(r=>r.id===btn.dataset.id);if(!review||review.status!=='PENDING')return;
   const entry=state.activity.find(e=>e.id===review.entryId);
