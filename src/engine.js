@@ -52,6 +52,7 @@ export function validatePolicy(input) {
 }
 /** No claims of AI model classification: memo detection uses a documented simple regex only. */
 export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
+  policy = policy && typeof policy==='object' ? policy : {};
   const findings=[];
   let score=8;
   let block=false;
@@ -70,14 +71,14 @@ export function evaluateIntent(intent, policy=DEFAULT_POLICY, context={}) {
   if(!intent||!CHAINS.includes(sourceChain)||!CHAINS.includes(chain)) add('UNSUPPORTED_CHAIN','BLOCK','Select valid source and destination chains.',100);
   if(!Number.isFinite(amount)||amount<=0||amount>1000000000||Math.round(amount*1e6)/1e6!==amount) add('INVALID_AMOUNT','BLOCK','Enter a positive USDC amount (maximum six decimal places).',100);
   if(!validAddress(chain,destination)) add('INVALID_RECIPIENT','BLOCK','Recipient address format is invalid for the selected chain.',100);
-  if(context?.agentEnabled===false) add('DISABLED_AGENT','BLOCK','Agent is disabled by an operator.',100);
+  if(context?.agentEnabled!==true) add('DISABLED_AGENT','BLOCK','Agent is disabled or authorization was not provided.',100);
   const deny=(policy.blockedRecipients||[]).map(recipientKey);
   const allow=(policy.allowlistedRecipients||[]).map(recipientKey);
   if(destination && deny.includes(recipientKey(destination))) add('DENYLIST','BLOCK','Recipient appears on your local denylist.',100);
   if(Number.isFinite(amount)&&amount>0){
     if(amount>policy.perTransaction) add('PER_TX_LIMIT','BLOCK',`Exceeds the ${policy.perTransaction} USDC per-transaction limit.`,85);
-    const spent=Number(context?.spentToday)||0;
-    if(!Number.isFinite(spent)||spent<0){ add('INVALID_CONTEXT','BLOCK','Invalid daily-spend context.',100); }
+    const spent=context?.spentToday;
+    if(typeof spent!=='number'||!Number.isFinite(spent)||spent<0){ add('INVALID_CONTEXT','BLOCK','Invalid daily-spend context.',100); }
     else if(round(spent+amount)>policy.dailyBudget) add('DAILY_LIMIT','BLOCK',`Would exceed the ${policy.dailyBudget} USDC daily budget (already used: ${round(spent)}).`,85);
     if(amount>=policy.reviewAt) add('REVIEW_THRESHOLD','REVIEW',`Meets the ${policy.reviewAt} USDC manual-review threshold.`,18);
   }

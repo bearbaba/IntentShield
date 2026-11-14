@@ -150,7 +150,9 @@ function persistIntent(form){
  formIntent={agentId:String(data.get('agentId')),sourceChain:String(data.get('sourceChain')),destinationChain:String(data.get('destinationChain')),amount:String(data.get('amount')),recipient:String(data.get('recipient')),memo:String(data.get('memo'))};
  const agent=state.agents.find(a=>a.id===formIntent.agentId);
  const report=evaluateIntent(formIntent,state.policy,{agentEnabled:agent?.enabled===true,spentToday:state.simulatedSpentToday});
- const entry={id:uid(),at:report.evaluatedAt,origin:'user',scenario:selectedScenario,agentId:formIntent.agentId,sourceChain:formIntent.sourceChain,destinationChain:formIntent.destinationChain,amount:Number(formIntent.amount),recipient:formIntent.recipient,memo:formIntent.memo,...report};
+ const sample=SCENARIOS.find(x=>x.id===selectedScenario);
+ const isExactSample=sample && ['agentId','sourceChain','destinationChain','amount','recipient','memo'].every(k=>String(sample[k])===String(formIntent[k]));
+ const entry={id:uid(),at:report.evaluatedAt,origin:'user',scenario:isExactSample?selectedScenario:'custom',agentId:formIntent.agentId,sourceChain:formIntent.sourceChain,destinationChain:formIntent.destinationChain,amount:Number(formIntent.amount),recipient:formIntent.recipient,memo:formIntent.memo,...report};
  state.activity.unshift(entry);state.activity=state.activity.slice(0,300);
  if(entry.decision==='REVIEW')state.reviews.unshift({id:uid(),entryId:entry.id,at:entry.at,status:'PENDING'});
  state.reviews=state.reviews.slice(0,300);

@@ -32,3 +32,7 @@ test('denylist is blocking even below threshold',()=>{
  const policy={...base.policy,blockedRecipients:['treasury.near']};
  assert.equal(evaluateIntent(SCENARIOS[0],policy,{spentToday:0,agentEnabled:true}).decision,'BLOCK');
 });
+
+test('missing agent authorization is blocked',()=>assert.equal(evaluateIntent(SCENARIOS[0],base.policy,{spentToday:0}).decision,'BLOCK'));
+test('invalid spend context fails closed',()=>assert.equal(check('safe',{}, {spentToday:NaN}).decision,'BLOCK'));
+test('null policy fails closed without throwing',()=>assert.equal(evaluateIntent(SCENARIOS[0],null,{spentToday:0,agentEnabled:true}).decision,'BLOCK'));
